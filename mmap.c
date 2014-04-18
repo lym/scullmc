@@ -18,7 +18,7 @@ void scullmc_vma_open(struct vm_area_struct *vma)
 {
 	struct scullmc_dev *dev = vma->vm_private_data;	/* shared memory */
 
-	dev->vmas++
+	dev->vmas++;
 }
 
 void scullmc_vma_close(struct vm_area_struct *vma)
@@ -80,7 +80,7 @@ out:
 
 struct vm_operations_struct scullmc_vm_ops = {
 	.open	= scullmc_vma_open,
-	.clode	= scullmc_vma_close,
+	.close	= scullmc_vma_close,
 	.nopage	= scullmc_vma_nopage,
 };
 

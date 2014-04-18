@@ -13,7 +13,7 @@ TARGET = scullmc
 
 ifneq ($(KERNELRELEASE),)
 
-scullmc-objs := main.o
+scullmc-objs := main.o mmap.o
 
 obj-m := scullmc.o
 
