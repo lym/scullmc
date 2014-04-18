@@ -43,9 +43,10 @@ struct page *scullmc_vma_nopage(struct vm_area_struct *vma,
 				unsigned long address, int *type)
 {
 	unsigned long offset;
-	struct scullmc_dev *ptr, *dev = vma->vm_private_data;
-	struct page *page = NOPAGE_SIGBUS;
-	void *pageptr	  = NULL;	/* default to missing */
+	struct scullmc_dev *ptr;
+	struct scullmc_dev *dev = vma->vm_private_data;
+	struct page *page	= NOPAGE_SIGBUS;
+	void *pageptr		= NULL;	/* default to missing */
 
 	down(&dev->sem);
 	offset = (address - vma->vm_start) + (vma->vm_pgoff << PAGE_SHIFT);

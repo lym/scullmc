@@ -20,7 +20,7 @@
 #include <linux/aio.h>
 #include <asm/uaccess.h>
 
-#include "scull.h"
+#include "scullmc.h"
 
 int scullmc_major	= SCULLMC_MAJOR;
 int scullmc_devs	= SCULLMC_DEVS;
@@ -54,7 +54,7 @@ struct kmem_cache *scullmc_cache;
 /* open and close */
 int scullmc_open(struct inode *inode, struct file *filp)
 {
-	struct scullmc_dev;		/* device informations */
+	struct scullmc_dev *dev;		/* device information */
 
 	/* find the device */
 	dev = container_of(inode->i_cdev, struct scullmc_dev, cdev);
@@ -96,13 +96,13 @@ struct scullmc_dev *scullmc_follow(struct scullmc_dev *dev, int n)
 ssize_t scullmc_read(struct file *filp, char __user *buf, size_t count,
 		     loff_t *f_pos)
 {
-	struct scullmc_dev *dev	= filp->private_data;	/* the first list-item */
-	struct scullmc_dev *dptr;
-	int quantum	= dev->quantum;
-	int qset	= dev->qset;
-	int itemsize	= quantum * qset;		/* how many bytes in the list item */
 	int item, s_pos, q_pos, rest;
-	ssize_t retval	= 0;
+	struct scullmc_dev *dptr;
+	struct scullmc_dev *dev	= filp->private_data;	/* the first list-item */
+	int quantum		= dev->quantum;
+	int qset		= dev->qset;
+	int itemsize		= quantum * qset;	/* how many bytes in the list item */
+	ssize_t retval		= 0;
 
 	if (down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
@@ -112,8 +112,8 @@ ssize_t scullmc_read(struct file *filp, char __user *buf, size_t count,
 		count = dev->size - *f_pos;
 
 	/* find list-item, qset and offset in the quantum */
-	item = ((long) *f_pos) / itemsize;
-	rest = ((long) *f_pos) % itemsize;
+	item  = ((long) *f_pos) / itemsize;
+	rest  = ((long) *f_pos) % itemsize;
 	s_pos = rest / quantum;
 	q_pos = rest % quantum;
 
@@ -125,10 +125,10 @@ ssize_t scullmc_read(struct file *filp, char __user *buf, size_t count,
 	if (!dptr->data[s_pos])
 		goto nothing;
 	if (count > quantum - q_pos)
-		count = quantum - q_pos;	/* read only up to the end of this quantum */
+		count	= quantum - q_pos;	/* read only up to the end of this quantum */
 
 	if (copy_to_user(buf, dptr->data[s_pos] + q_pos, count)) {
-		retval = -EFAULT;
+		retval	= -EFAULT;
 		goto nothing;
 	}
 	up(&dev->sem);
@@ -141,16 +141,16 @@ nothing:
 	return retval;
 }
 
-ssize_t scullmc_write(struct file *filp, const char __uset *buf, size_t count,
+ssize_t scullmc_write(struct file *filp, const char __user *buf, size_t count,
 		      loff_t *f_pos)
 {
-	struct scullmc_dev *dev	= filp->private_data;
 	struct scullmc_dev *dptr;
-	int quantum	= dev->quantum;
-	int qset	= dev->qset;
-	int itemsize	= quantum * qset;
 	int item, s_pos, q_pos, rest;
-	ssize_t retval	= -ENOMEM;
+	struct scullmc_dev *dev	= filp->private_data;
+	int quantum		= dev->quantum;
+	int qset		= dev->qset;
+	int itemsize		= quantum * qset;
+	ssize_t retval		= -ENOMEM;
 
 	if (down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
@@ -217,7 +217,7 @@ int scullmc_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
 	 * kernel-oriented, so the concept of "read" and "write" is reversed.
 	 */
 	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE, (void __user *) arg, __IOC_SIZE(cmd));
+		err = !access_ok(VERIFY_WRITE, (void __user *) arg, _IOC_SIZE(cmd));
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
 		err = !access_ok(VERIFY_READ, (void __user *) arg, _IOC_SIZE(cmd));
 	if (err)
@@ -293,8 +293,8 @@ int scullmc_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
 /* The extended operations */
 loff_t scullmc_llseek(struct file *filp, loff_t off, int whence)
 {
-	struct scullmc_dev *dev	= filp->private_data;
 	long newpos;
+	struct scullmc_dev *dev	= filp->private_data;
 
 	switch (whence) {
 		case 0:		/* SEEK_SET */
@@ -322,7 +322,7 @@ loff_t scullmc_llseek(struct file *filp, loff_t off, int whence)
 /* A simple asynchronous I/O implementation. */
 
 struct async_work {
-	struct koicb *iocb;
+	struct kiocb *iocb;
 	int result;
 	struct work_struct work;
 };
@@ -335,11 +335,11 @@ static void scullmc_do_deferred_op(void *p)
 	kfree(stuff);
 }
 
-static int scullmc_defer_op(int write, struct koicb *iocb, char __user *buf,
-			    size_t count loff_t pos)
+static int scullmc_defer_op(int write, struct kiocb *iocb, char __user *buf,
+			    size_t count, loff_t pos)
 {
-	struct async_work *stuff;
 	int result;
+	struct async_work *stuff;
 
 	/* Copy now while we can access the buffer */
 	if (write)
@@ -353,11 +353,11 @@ static int scullmc_defer_op(int write, struct koicb *iocb, char __user *buf,
 
 	/* Otherwise defer the completion for a few milliseconds. */
 	stuff = kmalloc(sizeof (*stuff), GFP_KERNEL);
-	if (Stuff == NULL)
+	if (stuff == NULL)
 		return result;	/* No memory, just complete now */
-	stuff->iocb = iocb;
-	stuff->result = result;
-	INIT_WORK(&stuff->work, scullmc_do_deferred_op, stuff);
+	stuff->iocb	= iocb;
+	stuff->result	= result;
+	INIT_WORK(&stuff->work, scullmc_do_deferred_op);
 	schedule_delayed_work(&stuff->work, HZ/100);
 	return -EIOCBQUEUED;
 }
@@ -380,18 +380,18 @@ struct file_operations scullmc_fops = {
 	.llseek		= scullmc_llseek,
 	.read		= scullmc_read,
 	.write		= scullmc_write,
-	.ioctl		= scullmc_ioctl,
+	.unlocked_ioctl		= scullmc_ioctl,
 	.open		= scullmc_open,
 	.release	= scullmc_release,
 	.aio_read	= scullmc_aio_read,
 	.aio_write	= scullmc_aio_write
 };
 
-int scull_trim(struct scullmc_dev *dev)
+int scullmc_trim(struct scullmc_dev *dev)
 {
+	int i;
 	struct scullmc_dev *next, *dptr;
 	int qset	= dev->qset;
-	int i;
 
 	if (dev->vmas)	/* don't trim: there are active mappings */
 		return -EBUSY;
@@ -454,7 +454,7 @@ int scullmc_init(void)
 	 * be specified at load time
 	 */
 	scullmc_devices = kmalloc(scullmc_devs * sizeof (struct scullmc_dev), GFP_KERNEL);
-	if (!scullmc_devicesz) {
+	if (!scullmc_devices) {
 		result = -ENOMEM;
 		goto fail_malloc;
 	}
@@ -462,16 +462,16 @@ int scullmc_init(void)
 	memset (scullmc_devices, 0, scullmc_devs * sizeof (struct scullmc_dev));
 	for (i = 0; i < scullmc_devs; i++) {
 		scullmc_devices[i].quantum = scullmc_quantum;
-		scullmc_devices[i].qset = scull_qset;
+		scullmc_devices[i].qset = scullmc_qset;
 		sema_init(&scullmc_devices[i].sem, 1);
 		scullmc_setup_cdev(scullmc_devices + i, i);
 	}
 
 	scullmc_cache= kmem_cache_create("scullmc", scullmc_quantum, 0,
-					 SLAB_HWCACHE_ALIGN, NULL, NULL); /* no ctor/dtor */
+					 SLAB_HWCACHE_ALIGN, NULL); /* no ctor/dtor */
 	if (scullmc_cache) {
 		scullmc_cleanup();
-		return -ENMOMEM;
+		return -ENOMEM;
 	}
 
 #ifdef SCULLMC_USE_PROC
@@ -498,10 +498,8 @@ void scullmc_cleanup(void)
 
 	if (scullmc_cache)
 		kmem_cache_destroy(scullmc_cache);
-	unregister_chrdev_region(MKDEV (scull_major, 0), scullmc_devs);
+	unregister_chrdev_region(MKDEV (scullmc_major, 0), scullmc_devs);
 }
 
 module_init(scullmc_init);
 module_exit(scullmc_cleanup);
-
-#endif
