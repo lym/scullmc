@@ -1,0 +1,25 @@
+This  source code distributed can be  redistributed in source 
+or  binary form.
+
+A lot of this code is adopted from the book Linux Device Drivers by
+Jonathan Corbet, Alessandro Rubini, and Greg Kroah-Hartman, published
+by O'Reilly & Associates. 
+
+This  code is under copyright and  cannot be  included in any other book,
+publication, or educational product without permission from O'Reilly &
+Associates. No warranty  is attached.
+
+There are a few exception to this licence, however: a few sources
+herein are distributed according to the GNU General Public License,
+version 2. You'll find a copy of the license in
+/usr/src/linux/COPYING, and in other places in your filesystem.
+The affected source files are:
+
+	pci/pci_skel.c
+	tty/tiny_serial.c
+	tty/tiny_tty.c
+	usb/usb-skeleton.c
+
+The files in ./pci ./tty and ./usb inherit the GPL from the kernel
+sources, as most of their code comes straight from the kernel
+(usb-skeleton.c being part of the kernel source tree directly.)
