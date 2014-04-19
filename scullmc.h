@@ -4,6 +4,7 @@
 
 #include <linux/ioctl.h>
 #include <linux/cdev.h>
+#include <linux/semaphore.h>
 
 /* Debugging Macros */
 #undef PDEBUG

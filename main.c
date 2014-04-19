@@ -18,6 +18,7 @@
 #include <linux/proc_fs.h>
 #include <linux/fcntl.h>
 #include <linux/aio.h>
+#include <linux/semaphore.h>
 #include <asm/uaccess.h>
 
 #include "scullmc.h"

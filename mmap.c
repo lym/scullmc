@@ -45,7 +45,7 @@ struct page *scullmc_vma_nopage(struct vm_area_struct *vma,
 	unsigned long offset;
 	struct scullmc_dev *ptr;
 	struct scullmc_dev *dev = vma->vm_private_data;
-	struct page *page	= NOPAGE_SIGBUS;
+	struct page *page	= NULL; /*NOPAGE_SIGBUS; */
 	void *pageptr		= NULL;	/* default to missing */
 
 	down(&dev->sem);
