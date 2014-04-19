@@ -56,7 +56,7 @@ extern struct file_operations scullmc_fops;
 /* the different configurable parameters */
 extern int scullmc_major;	/* main.c */
 extern int scullmc_devs;
-extern int scullmc_order;
+extern int scullmc_quantum;
 extern int scullmc_qset;
 
 /* prototypes for shared functions */

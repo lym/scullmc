@@ -1,11 +1,12 @@
 /*
- * Memory mapping for the scull_mem_cache char module
+ * Memory mapping for the scullmc char module
  */
 
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/errno.h>
 #include <asm/pgtable.h>
+#include <linux/fs.h>
 
 #include "scullmc.h"
 
@@ -39,20 +40,25 @@ void scullmc_vma_close(struct vm_area_struct *vma)
  * they are unmapped, their count is individually decreased, and would drop to
  * 0.
  */
-struct page *scullmc_vma_nopage(struct vm_area_struct *vma,
-				unsigned long address, int *type)
+static int *scullmc_vma_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	unsigned long offset;
 	struct scullmc_dev *ptr;
 	struct scullmc_dev *dev = vma->vm_private_data;
-	struct page *page	= NULL; /*NOPAGE_SIGBUS; */
+	struct page *page	= VM_FAULT_SIGBUS; /*NOPAGE_SIGBUS; */
 	void *pageptr		= NULL;	/* default to missing */
+	int *type;
 
 	down(&dev->sem);
-	offset = (address - vma->vm_start) + (vma->vm_pgoff << PAGE_SHIFT);
+	/*
+         * Using vm_pgoff as a selector forces us to use this unusual
+         * addressing scheme.
+         */
+        offset = (unsigned long)vmf->virtual_address - vma->vm_start;
 	if (offset >= dev->size)
 		goto out;		/* out of range */
 
+	//unsigned long baddr = map->offset + offset;
 	/*
 	 * Now retrieve the scullmc device from the list, then the page.
 	 * If the device has holes, the process receives a SIGBUS when accessing
@@ -81,15 +87,15 @@ out:
 struct vm_operations_struct scullmc_vm_ops = {
 	.open	= scullmc_vma_open,
 	.close	= scullmc_vma_close,
-	.nopage	= scullmc_vma_nopage,
+	.fault	= scullmc_vma_fault,
 };
 
 int scullmc_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	struct inode *inode = filp->f_dentry->d_inode;
 
-	/* refuse to map if order is not 0 */
-	if (scullmc_devices[iminor(inode)].order)
+	/* refuse to map if quantum is not 0 */
+	if (scullmc_devices[iminor(inode)].quantum)
 		return -ENODEV;
 
 	/* don't do anything here: "nopage" will set up page table entries */
