@@ -1,9 +1,10 @@
 /*
- * scull_mem_cache is a cut-down version of the *scull* module that
+ * scullmc is a cut-down version of the *scull* module that
  * implements only the bare device - the persistent memory region. Unlike scull,
  * which uses `kmalloc`, scull_mem_cache uses memory caches. The size of the
  * quantum can be modified at compile time and at load time, but not at
- * runtime - that would require creating a new memory cache.
+ * runtime - that would require creating a new memory cache, that we don't
+ * want to get into right now.
  *
  */
 
@@ -199,8 +200,7 @@ nomem:
 }
 
 /* The ioctl implementation */
-int scullmc_ioctl(struct inode *inode, struct file *filp, unsigned int cmd,
-		  unsigned long arg)
+long scullmc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int tmp;
 	int err	= 0;
@@ -329,14 +329,15 @@ struct async_work {
 };
 
 /* Complete an asynchronous operation */
-static void scullmc_do_deferred_op(void *p)
+static void scullmc_do_deferred_op(struct work_struct *work)
 {
-	struct async_work *stuff = (struct async_work *) p;
-	aio_complete(stuff->iocb, stuff->result, 0);
-	kfree(stuff);
+	//struct async_work *stuff = (struct async_work *) p;
+	struct async_work *p = container_of(work, struct async_work, work);
+	aio_complete(p->iocb, p->result, 0);
+	kfree(p);
 }
 
-static int scullmc_defer_op(int write, struct kiocb *iocb, char __user *buf,
+static ssize_t scullmc_defer_op(int write, struct kiocb *iocb, char __user *buf,
 			    size_t count, loff_t pos)
 {
 	int result;
@@ -353,7 +354,7 @@ static int scullmc_defer_op(int write, struct kiocb *iocb, char __user *buf,
 		return result;
 
 	/* Otherwise defer the completion for a few milliseconds. */
-	stuff = kmalloc(sizeof (*stuff), GFP_KERNEL);
+	stuff = kmalloc(sizeof(*stuff), GFP_KERNEL);
 	if (stuff == NULL)
 		return result;	/* No memory, just complete now */
 	stuff->iocb	= iocb;
@@ -363,16 +364,23 @@ static int scullmc_defer_op(int write, struct kiocb *iocb, char __user *buf,
 	return -EIOCBQUEUED;
 }
 
-static ssize_t scullmc_aio_read(struct kiocb *iocb, char __user *buf, size_t count,
-				loff_t pos)
+static ssize_t scullmc_aio_read(struct kiocb *iocb, const struct iovec *iov,
+				unsigned long nr_segs, loff_t pos)
 {
+	char __user *buf = NULL;
+	size_t count = 0;
+
 	return scullmc_defer_op(0, iocb, buf, count, pos);
+	//return 0;
 }
 
-static ssize_t scullmc_aio_write(struct kiocb *iocb, const char __user *buf,
-				 size_t count, loff_t pos)
+static ssize_t scullmc_aio_write(struct kiocb *iocb, const struct iovec *iov,
+				 unsigned long nr_segs, loff_t pos)
 {
+	char __user *buf = NULL;
+	size_t count = 0;
 	return scullmc_defer_op(1, iocb, (char __user *) buf, count, pos);
+	//return 0;
 }
 
 /* The fops */
@@ -381,7 +389,7 @@ struct file_operations scullmc_fops = {
 	.llseek		= scullmc_llseek,
 	.read		= scullmc_read,
 	.write		= scullmc_write,
-	.unlocked_ioctl		= scullmc_ioctl,
+	.unlocked_ioctl	= scullmc_ioctl,
 	.open		= scullmc_open,
 	.release	= scullmc_release,
 	.aio_read	= scullmc_aio_read,
@@ -454,7 +462,7 @@ int scullmc_init(void)
 	 * allocate the devices -- we can't have them static, as the number can
 	 * be specified at load time
 	 */
-	scullmc_devices = kmalloc(scullmc_devs * sizeof (struct scullmc_dev), GFP_KERNEL);
+	scullmc_devices = kmalloc((scullmc_devs * sizeof(struct scullmc_dev)), GFP_KERNEL);
 	if (!scullmc_devices) {
 		result = -ENOMEM;
 		goto fail_malloc;
@@ -468,9 +476,13 @@ int scullmc_init(void)
 		scullmc_setup_cdev(scullmc_devices + i, i);
 	}
 
-	scullmc_cache= kmem_cache_create("scullmc", scullmc_quantum, 0,
+	/*
+	scullmc_cache = kmem_cache_create("scullmc", scullmc_quantum, 0,
+					 SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
+	*/
+	scullmc_cache = kmem_cache_create("scullmc", sizeof(struct scullmc_dev), 0,
 					 SLAB_HWCACHE_ALIGN, NULL); /* no ctor/dtor */
-	if (scullmc_cache) {
+	if (!scullmc_cache) {
 		scullmc_cleanup();
 		return -ENOMEM;
 	}
