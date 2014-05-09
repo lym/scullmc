@@ -16,11 +16,14 @@
 #include <linux/fs.h>
 #include <linux/errno.h>
 #include <linux/types.h>
-#include <linux/proc_fs.h>
 #include <linux/fcntl.h>
 #include <linux/aio.h>
 #include <linux/semaphore.h>
 #include <asm/uaccess.h>
+
+#include <linux/cdev.h>
+#include <linux/kdev_t.h>
+#include <linux/device.h>
 
 #include "scullmc.h"
 
@@ -37,20 +40,16 @@ module_param(scullmc_quantum, int, 0);
 MODULE_AUTHOR("Salym Senyonga");
 MODULE_LICENSE("GPL");
 
-struct scullmc_dev *scullmc_devices;	/* allocated in scullmc_init */
+struct scullmc_dev *scullmc_devices;	/* allocated in init */
+static struct class *sc;	/* global variable for the device class for `/sys`*/
 
 int scullmc_trim(struct scullmc_dev *dev);
 void scullmc_cleanup(void);
 
-/* declare one cache pointer; use it for all devices */
-struct kmem_cache *scullmc_cache;
+struct kmem_cache *scullmc_cache;	/* one mem cache pntr for all devices */
 
-#ifdef SCULLMC_USE_PROC		/* don't waste space if unused */
-/*
- * use seq_file interface here
- *
- * To be Added later after all other code written
- */
+#ifdef SCULLMC_USE_PROC			/* don't waste space if unused */
+
 #endif	/* SCULLMC_USE_PROC */
 
 /* open and close */
@@ -321,7 +320,6 @@ loff_t scullmc_llseek(struct file *filp, loff_t off, int whence)
 }
 
 /* A simple asynchronous I/O implementation. */
-
 struct async_work {
 	struct kiocb *iocb;
 	int result;
@@ -427,6 +425,7 @@ int scullmc_trim(struct scullmc_dev *dev)
 	return 0;
 }
 
+/*
 static void scullmc_setup_cdev(struct scullmc_dev *dev, int index)
 {
 	int err;
@@ -439,15 +438,38 @@ static void scullmc_setup_cdev(struct scullmc_dev *dev, int index)
 	if (err)
 		printk(KERN_NOTICE "Error %d adding scull%d", err, index);
 }
+*/
 
 /* And.... the module stuff */
 
 int scullmc_init(void)
 {
-	int result, i;
-	dev_t dev = MKDEV(scullmc_major, 0);
+	//int result, i;
+	//dev_t dev; // = MKDEV(scullmc_major, 0);
+	dev_t first;
+	struct scullmc_dev *dev;
 
+	if (alloc_chrdev_region(&first, 0, 1, "scullmc") < 0)
+		return -1;
+	if ((sc = class_create(THIS_MODULE, "scull_mem")) == NULL) {
+		unregister_chrdev_region(first, 1);
+		return -1;
+	}
+	if (device_create(sc, NULL, first, NULL, "scullmc") == NULL) {
+		class_destroy(sc);
+		unregister_chrdev_region(first, 1);
+		return -1;
+	}
+
+	cdev_init(&dev->cdev, &scullmc_fops);
+	if (cdev_add(&dev->cdev, first, 1) == -1) {
+		device_destroy(sc, first);
+		class_destroy(sc);
+		unregister_chrdev_region(first, 1);
+		return -1;
+	}
 	/* Register major and accept dynamic number */
+	/*
 	if (scullmc_major)
 		result = register_chrdev_region(dev, scullmc_devs, "scullmc");
 	else {
@@ -457,11 +479,13 @@ int scullmc_init(void)
 
 	if (result < 0)
 		return result;
-
+	*/
 	/*
 	 * allocate the devices -- we can't have them static, as the number can
 	 * be specified at load time
 	 */
+	pr_info("Char file must have been created by now");
+	/*
 	scullmc_devices = kmalloc((scullmc_devs * sizeof(struct scullmc_dev)), GFP_KERNEL);
 	if (!scullmc_devices) {
 		result = -ENOMEM;
@@ -475,33 +499,38 @@ int scullmc_init(void)
 		sema_init(&scullmc_devices[i].sem, 1);
 		scullmc_setup_cdev(scullmc_devices + i, i);
 	}
+	*/
 
 	/*
 	scullmc_cache = kmem_cache_create("scullmc", scullmc_quantum, 0,
 					 SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
 	*/
+	/*
 	scullmc_cache = kmem_cache_create("scullmc", sizeof(struct scullmc_dev), 0,
-					 SLAB_HWCACHE_ALIGN, NULL); /* no ctor/dtor */
+					 SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
 	if (!scullmc_cache) {
 		scullmc_cleanup();
 		return -ENOMEM;
 	}
+	*/
 
 #ifdef SCULLMC_USE_PROC
-	/* create /proc entry here */
+	scullmc_create_proc();
 #endif
 	return 0;
 
+/*
 fail_malloc:
 	unregister_chrdev_region(dev, scullmc_devs);
 	return result;
+*/
 }
 
 void scullmc_cleanup(void)
 {
 	int i;
 #ifdef SCULLMC_USE_PROC
-	/* remove proc entry */
+	scullmc_remove_proc();
 #endif
 	for (i = 0; i < scullmc_devs; i++) {
 		cdev_del(&scullmc_devices[i].cdev);
