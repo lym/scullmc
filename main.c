@@ -27,12 +27,12 @@
 
 #include "scullmc.h"
 
-int scullmc_major	= SCULLMC_MAJOR;
+//int scullmc_major	= SCULLMC_MAJOR;
 int scullmc_devs	= SCULLMC_DEVS;
 int scullmc_qset	= SCULLMC_QSET;
 int scullmc_quantum	= SCULLMC_QUANTUM;
 
-module_param(scullmc_major, int, 0);
+//module_param(scullmc_major, int, 0);
 module_param(scullmc_devs, int, 0);
 module_param(scullmc_qset, int, 0);
 module_param(scullmc_quantum, int, 0);
@@ -42,9 +42,12 @@ MODULE_LICENSE("GPL");
 
 struct scullmc_dev *scullmc_devices;	/* allocated in init */
 static struct class *sc;	/* global variable for the device class for `/sys`*/
+static dev_t first;
+struct scullmc_dev *dev;
+
 
 int scullmc_trim(struct scullmc_dev *dev);
-void scullmc_cleanup(void);
+static void scullmc_cleanup(void);
 
 struct kmem_cache *scullmc_cache;	/* one mem cache pntr for all devices */
 
@@ -442,26 +445,49 @@ static void scullmc_setup_cdev(struct scullmc_dev *dev, int index)
 
 /* And.... the module stuff */
 
-int scullmc_init(void)
+static int __init scullmc_init(void)
 {
-	//int result, i;
+	//int result;
+	int i;
 	//dev_t dev; // = MKDEV(scullmc_major, 0);
-	dev_t first;
-	struct scullmc_dev *dev;
-
 	if (alloc_chrdev_region(&first, 0, 1, "scullmc") < 0)
 		return -1;
 	if ((sc = class_create(THIS_MODULE, "scull_mem")) == NULL) {
 		unregister_chrdev_region(first, 1);
 		return -1;
 	}
-	if (device_create(sc, NULL, first, NULL, "scullmc") == NULL) {
+	if (device_create(sc, NULL, first, NULL, "scull_mc") == NULL) {
 		class_destroy(sc);
 		unregister_chrdev_region(first, 1);
 		return -1;
 	}
+	scullmc_devices = kmalloc((scullmc_devs * sizeof(struct scullmc_dev)), GFP_KERNEL);
+	if (!scullmc_devices) {
+		//result = -ENOMEM;
+		//goto fail_malloc;
+		return -ENOMEM;
+	}
+
+	memset (scullmc_devices, 0, scullmc_devs * sizeof (struct scullmc_dev));
+	for (i = 0; i < scullmc_devs; i++) {
+		scullmc_devices[i].quantum = scullmc_quantum;
+		scullmc_devices[i].qset = scullmc_qset;
+		sema_init(&scullmc_devices[i].sem, 1);
+		//scullmc_setup_cdev(scullmc_devices + i, i);
+		dev = &scullmc_devices[i];
+	}
+
+	if (dev == NULL) {
+		pr_info("dev is null");
+		class_destroy(sc);
+		unregister_chrdev_region(first, 1);
+		return -2;
+	}
 
 	cdev_init(&dev->cdev, &scullmc_fops);
+	dev->cdev.owner	= THIS_MODULE;
+	dev->cdev.ops	= &scullmc_fops;
+
 	if (cdev_add(&dev->cdev, first, 1) == -1) {
 		device_destroy(sc, first);
 		class_destroy(sc);
@@ -484,38 +510,21 @@ int scullmc_init(void)
 	 * allocate the devices -- we can't have them static, as the number can
 	 * be specified at load time
 	 */
-	pr_info("Char file must have been created by now");
-	/*
-	scullmc_devices = kmalloc((scullmc_devs * sizeof(struct scullmc_dev)), GFP_KERNEL);
-	if (!scullmc_devices) {
-		result = -ENOMEM;
-		goto fail_malloc;
-	}
-
-	memset (scullmc_devices, 0, scullmc_devs * sizeof (struct scullmc_dev));
-	for (i = 0; i < scullmc_devs; i++) {
-		scullmc_devices[i].quantum = scullmc_quantum;
-		scullmc_devices[i].qset = scullmc_qset;
-		sema_init(&scullmc_devices[i].sem, 1);
-		scullmc_setup_cdev(scullmc_devices + i, i);
-	}
-	*/
 
 	/*
 	scullmc_cache = kmem_cache_create("scullmc", scullmc_quantum, 0,
 					 SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
 	*/
-	/*
-	scullmc_cache = kmem_cache_create("scullmc", sizeof(struct scullmc_dev), 0,
+	scullmc_cache = kmem_cache_create("scullmc_cache", sizeof(struct scullmc_dev), 0,
 					 SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
 	if (!scullmc_cache) {
 		scullmc_cleanup();
 		return -ENOMEM;
 	}
-	*/
+	pr_info("Char file must have been created by now");
 
 #ifdef SCULLMC_USE_PROC
-	scullmc_create_proc();
+	//scullmc_create_proc();
 #endif
 	return 0;
 
@@ -526,21 +535,28 @@ fail_malloc:
 */
 }
 
-void scullmc_cleanup(void)
+static void __exit scullmc_cleanup(void)
 {
-	int i;
+	cdev_del(&dev->cdev);
+	device_destroy(sc, first);
+	class_destroy(sc);
+	unregister_chrdev_region(first, 1);
+	//int i;
 #ifdef SCULLMC_USE_PROC
-	scullmc_remove_proc();
+	//scullmc_remove_proc();
 #endif
+	/*
 	for (i = 0; i < scullmc_devs; i++) {
 		cdev_del(&scullmc_devices[i].cdev);
 		scullmc_trim(scullmc_devices + i);
 	}
 	kfree(scullmc_devices);
+	*/
 
 	if (scullmc_cache)
 		kmem_cache_destroy(scullmc_cache);
-	unregister_chrdev_region(MKDEV (scullmc_major, 0), scullmc_devs);
+	pr_info("scullmc succesfully removed");
+	//unregister_chrdev_region(MKDEV (scullmc_major, 0), scullmc_devs);
 }
 
 module_init(scullmc_init);
