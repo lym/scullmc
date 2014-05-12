@@ -69,7 +69,6 @@ int scullmc_open(struct inode *inode, struct file *filp)
 		up(&dev->sem);
 	}
 
-	/* and use filp->private_data to point to the device data */
 	filp->private_data = dev;
 
 	return 0;
@@ -325,7 +324,6 @@ struct async_work {
 	struct kiocb *iocb;
 	int result;
 	struct work_struct work;
-	//struct delayed_work work;
 };
 
 struct delayed_work *dwork;		/* for schedule_delayed_work */
@@ -388,7 +386,6 @@ static ssize_t scullmc_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	//return 0;
 }
 
-/* The fops */
 struct file_operations scullmc_fops = {
 	.owner		= THIS_MODULE,
 	.llseek		= scullmc_llseek,
@@ -433,28 +430,9 @@ int scullmc_trim(struct scullmc_dev *dev)
 	return 0;
 }
 
-/*
-static void scullmc_setup_cdev(struct scullmc_dev *dev, int index)
-{
-	int err;
-	int devno = MKDEV(scullmc_major, index);
-
-	cdev_init(&dev->cdev, &scullmc_fops);
-	dev->cdev.owner	= THIS_MODULE;
-	dev->cdev.ops	= &scullmc_fops;
-	err = cdev_add(&dev->cdev, devno, 1);
-	if (err)
-		printk(KERN_NOTICE "Error %d adding scull%d", err, index);
-}
-*/
-
-/* And.... the module stuff */
-
 static int scullmc_init(void)
 {
-	//int result;
 	int i;
-	//dev_t dev; // = MKDEV(scullmc_major, 0);
 	if (alloc_chrdev_region(&first, 0, 1, "scullmc") < 0)
 		return -1;
 	if ((sc = class_create(THIS_MODULE, "scull_mem")) == NULL) {
@@ -466,7 +444,9 @@ static int scullmc_init(void)
 		unregister_chrdev_region(first, 1);
 		return -1;
 	}
-	scullmc_devices = kmalloc((scullmc_devs * sizeof(struct scullmc_dev)), GFP_KERNEL);
+
+	scullmc_devices = kmalloc((scullmc_devs * sizeof(struct scullmc_dev)),
+				   GFP_KERNEL);
 	if (!scullmc_devices) {
 		//result = -ENOMEM;
 		//goto fail_malloc;
@@ -499,29 +479,10 @@ static int scullmc_init(void)
 		unregister_chrdev_region(first, 1);
 		return -1;
 	}
-	/* Register major and accept dynamic number */
-	/*
-	if (scullmc_major)
-		result = register_chrdev_region(dev, scullmc_devs, "scullmc");
-	else {
-		result = alloc_chrdev_region(&dev, 0, scullmc_devs, "scullmc");
-		scullmc_major = MAJOR(dev);
-	}
 
-	if (result < 0)
-		return result;
-	*/
-	/*
-	 * allocate the devices -- we can't have them static, as the number can
-	 * be specified at load time
-	 */
-
-	/*
-	scullmc_cache = kmem_cache_create("scullmc", scullmc_quantum, 0,
-					 SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
-	*/
-	scullmc_cache = kmem_cache_create("scullmc_cache", sizeof(struct scullmc_dev), 0,
-					 SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
+	scullmc_cache = kmem_cache_create("scullmc_cache",
+					   sizeof(struct scullmc_dev), 0,
+					   SLAB_HWCACHE_ALIGN, NULL); // no ctor/dtor
 	if (!scullmc_cache) {
 		scullmc_cleanup();
 		return -ENOMEM;
@@ -535,7 +496,7 @@ static int scullmc_init(void)
 
 /*
 fail_malloc:
-	unregister_chrdev_region(dev, scullmc_devs);
+	unregister_chrdev_region(first, 1);
 	return result;
 */
 }
@@ -561,7 +522,6 @@ static void scullmc_cleanup(void)
 	if (scullmc_cache)
 		kmem_cache_destroy(scullmc_cache);
 	pr_info("scullmc succesfully removed");
-	//unregister_chrdev_region(MKDEV (scullmc_major, 0), scullmc_devs);
 }
 
 module_init(scullmc_init);
