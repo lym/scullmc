@@ -58,9 +58,7 @@ struct kmem_cache *scullmc_cache;	/* one mem cache pntr for all devices */
 /* open and close */
 int scullmc_open(struct inode *inode, struct file *filp)
 {
-	struct scullmc_dev *dev;		/* device information */
-
-	/* find the device */
+	struct scullmc_dev *dev;
 	dev = container_of(inode->i_cdev, struct scullmc_dev, cdev);
 
 	/* now trim to 0 the length of the device if open was write-only */
@@ -327,7 +325,10 @@ struct async_work {
 	struct kiocb *iocb;
 	int result;
 	struct work_struct work;
+	//struct delayed_work work;
 };
+
+struct delayed_work *dwork;		/* for schedule_delayed_work */
 
 /* Complete an asynchronous operation */
 static void scullmc_do_deferred_op(struct work_struct *work)
@@ -343,6 +344,7 @@ static ssize_t scullmc_defer_op(int write, struct kiocb *iocb, char __user *buf,
 {
 	int result;
 	struct async_work *stuff;
+
 
 	/* Copy now while we can access the buffer */
 	if (write)
@@ -360,8 +362,10 @@ static ssize_t scullmc_defer_op(int write, struct kiocb *iocb, char __user *buf,
 		return result;	/* No memory, just complete now */
 	stuff->iocb	= iocb;
 	stuff->result	= result;
+	dwork->work	= stuff->work;
 	INIT_WORK(&stuff->work, scullmc_do_deferred_op);
-	schedule_delayed_work(&stuff->work, HZ/100);
+	//schedule_delayed_work(&stuff->work, HZ/100);
+	schedule_delayed_work(dwork, HZ/100);
 	return -EIOCBQUEUED;
 }
 
@@ -397,6 +401,7 @@ struct file_operations scullmc_fops = {
 	.aio_write	= scullmc_aio_write
 };
 
+/* Assumes `dev` non-NULL */
 int scullmc_trim(struct scullmc_dev *dev)
 {
 	int i;
@@ -445,7 +450,7 @@ static void scullmc_setup_cdev(struct scullmc_dev *dev, int index)
 
 /* And.... the module stuff */
 
-static int __init scullmc_init(void)
+static int scullmc_init(void)
 {
 	//int result;
 	int i;
@@ -535,7 +540,7 @@ fail_malloc:
 */
 }
 
-static void __exit scullmc_cleanup(void)
+static void scullmc_cleanup(void)
 {
 	cdev_del(&dev->cdev);
 	device_destroy(sc, first);
